@@ -1,92 +1,114 @@
 # SACF-SINR
 
-Code accompanying the manuscript **SACF-SINR: A framework for few-shot species distribution estimation based on semantic adaptation and context-guided fusion**.
+Implementation accompanying the manuscript **SACF-SINR: A framework for few-shot species distribution estimation based on semantic adaptation and context-guided fusion**.
 
-SACF-SINR extends spatial implicit neural representations (SINR) with task-oriented image-to-text adaptation and controlled multimodal context fusion. The released implementation matches the main experimental model and does not include a post-encoding shared representation encoder. It includes:
+## Overview
 
-- a SINR location encoder for spatial context;
+SACF-SINR estimates the geographic distribution of an unseen species from a small set of occurrence locations and any available species metadata. The model combines spatial observations, text and images through task-oriented semantic adaptation and context-guided fusion.
+
+This repository contains the model configuration used in the main experiments. Encoded modality tokens are passed directly to the Multimodal Context Transformer, without a post-encoding shared representation encoder. The main components are:
+
+- a SINR location encoder for spatial observations;
 - a trainable text encoder for species metadata;
-- an image-to-text adapter followed by a read-only text-encoder path;
-- a multimodal context Transformer with pooled context conditioning;
-- multiple field queries for distribution readout; and
-- image-mediated attention that limits direct image-to-query information flow when other context is available.
+- an image-to-text adapter with a read-only path through the text encoder;
+- pooled-context conditioning of the field queries;
+- multiple field queries for species range representation; and
+- image-mediated attention for controlling image-to-query information flow.
 
-## Repository contents
+## Repository structure
 
-The Python modules implement data loading, model components, training objectives, training, and few-shot evaluation.
-
-The main files are:
-
-- `sacf_model.py`: modality encoders and the SACF-SINR model;
-- `context_transformer.py`: context-prior conditioning, image-mediated attention, and field decoding;
-- `losses.py`: training objectives;
-- `prepare_metadata_cache.py`: creation of the training metadata cache from the released text and image features;
-- `run_sinr_pretrain.py`: SINR location-encoder pretraining entry point;
-- `run_sacf_sinr.py`: training entry point;
-- `evaluation.py`: IUCN and S&T evaluation implementation; and
-- `evaluate_sacf_sinr.py`: public evaluation entry point.
-
-No datasets, feature caches, model checkpoints, experiment outputs, or paper figures are included in this repository. Downloaded data should be placed under `data/` as described below. The training-data root can be changed in `paths.json`.
+- `sacf_model.py`: modality encoders and the SACF-SINR model.
+- `context_transformer.py`: context-prior conditioning, image-mediated attention and field decoding.
+- `models.py`: the SINR location encoder and model construction.
+- `losses.py`: the SINR pretraining and SACF-SINR training objectives.
+- `datasets.py`: occurrence-data loading and training-set construction.
+- `prepare_metadata_cache.py`: preparation of the training metadata cache.
+- `run_sinr_pretrain.py`: SINR location-encoder pretraining.
+- `run_sacf_sinr.py`: SACF-SINR training and ablation entry point.
+- `evaluate_sacf_sinr.py`: evaluation entry point.
+- `evaluation.py`: implementation of the IUCN and S&T evaluation protocols.
 
 ## Installation
 
-Python 3.10 or newer is recommended. Install the dependencies with:
+Python 3.10 or later is recommended. Install the required packages from the repository root:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Data and expected layout
+## Data preparation
 
-The experiments require the occurrence records, species text features, image features, and evaluation benchmarks described in the manuscript. See [`data/README.md`](data/README.md) for the external download links and the expected file layout. The training-data root is defined in [`paths.json`](paths.json).
+Data, pretrained features and model checkpoints are not included in this repository. Download links and the complete directory structure are provided in [`data/README.md`](data/README.md).
 
-After arranging the downloaded files, build the compact training metadata cache:
+After placing the downloaded files in the specified directories, build the metadata cache used during training:
 
 ```bash
 python prepare_metadata_cache.py
 ```
 
-## Training and evaluation
+The default training-data directory is defined in [`paths.json`](paths.json).
 
-Run commands from the repository root. First pretrain the SINR location encoder used to initialise SACF-SINR:
+## Training
+
+Run all commands from the repository root. To reproduce the main training protocol, first pretrain the SINR location encoder:
 
 ```bash
 python run_sinr_pretrain.py
 ```
 
-The checkpoint is written to `experiments/SINR-sc-20ep-noeval/model.pt`. Then train SACF-SINR:
+The pretrained checkpoint is saved as `experiments/SINR-sc-20ep-noeval/model.pt`. SACF-SINR can then be trained with:
 
 ```bash
 python run_sacf_sinr.py --device cuda
 ```
 
-To run a few-shot evaluation from a trained checkpoint:
+Use `--mm-init-ckpt` to provide a different SINR checkpoint. Use `--no-warm-start` to train without SINR initialisation.
+
+## Evaluation
+
+Evaluate a trained checkpoint with:
 
 ```bash
 python evaluate_sacf_sinr.py --ckpt path/to/model.pt --device cuda
 ```
 
-The command-line defaults reproduce the main configuration used in the manuscript. A different SINR checkpoint can be supplied with `--mm-init-ckpt`; `--no-warm-start` disables this initialisation. The component ablations can be launched explicitly:
+By default, the script evaluates the configured zero-shot and few-shot settings on both IUCN and S&T. Results are written to `fewshot_results.json` beside the checkpoint unless another path is supplied with `--out`.
+
+To include the AP of each evaluated species in the output file, run:
 
 ```bash
-# Independent image encoder
+python evaluate_sacf_sinr.py --ckpt path/to/model.pt --save-per-species
+```
+
+To evaluate a specific candidate image for each species, provide its zero-based index. For example, the following command selects index 0 after sorting each species' images by filename:
+
+```bash
+python evaluate_sacf_sinr.py --ckpt path/to/model.pt --image-index 0
+```
+
+When a larger index is requested, species without an image at that index are excluded from that evaluation run.
+
+## Component ablations
+
+The component ablations described in the manuscript can be launched as follows:
+
+```bash
+# Replace the image-to-text adaptation path with an independent image encoder
 python run_sacf_sinr.py --image-encoder independent
 
-# One field query
+# Use a single field query
 python run_sacf_sinr.py --queries 1
 
-# No pooled context prior
+# Remove the pooled context prior
 python run_sacf_sinr.py --no-context-prior
 
-# No image-mediated attention
+# Remove image-mediated attention
 python run_sacf_sinr.py --no-image-mediated-attention
 ```
 
-To save AP values for individual species, add `--save-per-species` to the evaluation command. To evaluate a particular candidate image, add `--image-index N`, where `N` is the zero-based row after sorting each species' images by filename. Species with fewer than `N + 1` images are excluded from that run.
-
 ## Reproducibility
 
-The main configuration uses three learnable field queries, four Transformer layers, two attention heads, model dimension 256, feed-forward dimension 512, AdamW with cosine warm restarts, and the image-mediated attention mask described in the manuscript. Random seeds and output locations are controlled by the command-line launchers.
+The default configuration uses three field queries, four Transformer layers, two attention heads, a model dimension of 256 and a feed-forward dimension of 512. Training uses AdamW with cosine warm restarts. Random seeds, output directories and component-ablation options can be set through the training command.
 
 ## License
 

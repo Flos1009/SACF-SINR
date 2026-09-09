@@ -1,0 +1,7 @@
+"""Public launcher for the SACF-SINR evaluation protocol."""
+
+from evaluation import main
+
+
+if __name__ == "__main__":
+    main()

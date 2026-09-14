@@ -113,3 +113,5 @@ The default configuration uses three field queries, four Transformer layers, two
 ## License
 
 This project is distributed under the MIT License. See [`LICENSE`](LICENSE).
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22744053.svg)](https://doi.org/10.5281/zenodo.22744053)
